@@ -20,7 +20,7 @@ export const metadata: Metadata = {
     description: "Built for production. Designed for scale. Used in real-world products. Enterprise-grade UI kits and boilerplates for funded startup founders and senior engineers.",
     images: [
       {
-        url: "/og-image.png",
+        url: "/og",
         width: 1200,
         height: 630,
         alt: "Azone.store - Production-Ready Templates",
@@ -31,7 +31,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Azone.store - Production-Ready Templates for Serious Builders",
     description: "Built for production. Designed for scale. Used in real-world products. Enterprise-grade UI kits and boilerplates for funded startup founders and senior engineers.",
-    images: ["/og-image.png"],
+    images: ["/og"],
     creator: "@azonestore",
   },
   robots: {
