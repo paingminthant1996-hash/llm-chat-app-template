@@ -2,25 +2,32 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const STORAGE_BUCKET = "template-sources";
 const SIGN_URL_EXPIRE_SECONDS = 120;
 
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_ROLE_KEY) {
-  console.error("Missing SUPABASE env in Next.js server route");
-}
+// Helper to get env vars (will be checked at runtime, not build time)
+const getSupabaseConfig = () => {
+  const url = process.env.SUPABASE_URL;
+  const anonKey = process.env.SUPABASE_ANON_KEY;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!url || !anonKey || !serviceKey) {
+    throw new Error("Missing SUPABASE env in Next.js server route");
+  }
+
+  return { url, anonKey, serviceKey };
+};
 
 // utility: call RPC user_has_access_to_version with user's JWT
 async function rpcUserHasAccess(versionId: string, userJwt: string): Promise<boolean> {
-  const rpcUrl = `${SUPABASE_URL}/rest/v1/rpc/user_has_access_to_version`;
+  const config = getSupabaseConfig();
+  const rpcUrl = `${config.url}/rest/v1/rpc/user_has_access_to_version`;
   const body = { p_version_id: versionId };
   const res = await fetch(rpcUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "apikey": SUPABASE_ANON_KEY ?? "",
+      "apikey": config.anonKey,
       "Authorization": `Bearer ${userJwt}`,
     },
     body: JSON.stringify(body),
@@ -37,12 +44,13 @@ async function rpcUserHasAccess(versionId: string, userJwt: string): Promise<boo
 
 // utility: get source_path of version
 async function getSourcePath(versionId: string): Promise<string | null> {
-  const url = `${SUPABASE_URL}/rest/v1/template_versions?id=eq.${encodeURIComponent(versionId)}&select=source_path`;
+  const config = getSupabaseConfig();
+  const url = `${config.url}/rest/v1/template_versions?id=eq.${encodeURIComponent(versionId)}&select=source_path`;
   const res = await fetch(url, {
     method: "GET",
     headers: {
-      "apikey": SUPABASE_ANON_KEY ?? "",
-      "Authorization": `Bearer ${SUPABASE_ANON_KEY ?? ""}`,
+      "apikey": config.anonKey,
+      "Authorization": `Bearer ${config.anonKey}`,
     },
   });
   if (!res.ok) {
@@ -58,12 +66,13 @@ async function getSourcePath(versionId: string): Promise<string | null> {
 
 // utility: create signed url via storage REST with service role
 async function createSignedUrl(bucketId: string, objectKey: string, expiresInSec = SIGN_URL_EXPIRE_SECONDS) {
-  const url = `${SUPABASE_URL}/storage/v1/object/sign/${encodeURIComponent(bucketId)}/${encodeURIComponent(objectKey)}?expiry=${expiresInSec}`;
+  const config = getSupabaseConfig();
+  const url = `${config.url}/storage/v1/object/sign/${encodeURIComponent(bucketId)}/${encodeURIComponent(objectKey)}?expiry=${expiresInSec}`;
   const res = await fetch(url, {
     method: "POST",
     headers: {
-      "apikey": SUPABASE_SERVICE_ROLE_KEY ?? "",
-      "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY ?? ""}`,
+      "apikey": config.serviceKey,
+      "Authorization": `Bearer ${config.serviceKey}`,
       "Content-Type": "application/json",
     },
   });
@@ -77,6 +86,9 @@ async function createSignedUrl(bucketId: string, objectKey: string, expiresInSec
 
 export async function GET(req: NextRequest) {
   try {
+    // Check env vars at runtime (not build time)
+    getSupabaseConfig();
+
     const url = new URL(req.url);
     const versionId = url.searchParams.get("version_id");
     if (!versionId) {
@@ -108,8 +120,11 @@ export async function GET(req: NextRequest) {
     const urlResp = (signed as any).signedURL ?? (signed as any).signed_url ?? signed;
 
     return NextResponse.json({ url: urlResp, expires_in: SIGN_URL_EXPIRE_SECONDS }, { status: 200 });
-  } catch (err) {
+  } catch (err: any) {
     console.error("app/api/download error:", err);
+    if (err.message?.includes("Missing SUPABASE")) {
+      return NextResponse.json({ error: "server_configuration_error" }, { status: 500 });
+    }
     return NextResponse.json({ error: "internal_error" }, { status: 500 });
   }
 }
@@ -117,6 +132,9 @@ export async function GET(req: NextRequest) {
 // For POST support (optional)
 export async function POST(req: NextRequest) {
   try {
+    // Check env vars at runtime (not build time)
+    getSupabaseConfig();
+
     const body = await req.json();
     const versionId = body?.version_id ?? null;
     if (!versionId) return NextResponse.json({ error: "version_id_required" }, { status: 400 });
@@ -138,8 +156,11 @@ export async function POST(req: NextRequest) {
 
     const urlResp = (signed as any).signedURL ?? (signed as any).signed_url ?? signed;
     return NextResponse.json({ url: urlResp, expires_in: SIGN_URL_EXPIRE_SECONDS }, { status: 200 });
-  } catch (err) {
+  } catch (err: any) {
     console.error("app/api/download POST error:", err);
+    if (err.message?.includes("Missing SUPABASE")) {
+      return NextResponse.json({ error: "server_configuration_error" }, { status: 500 });
+    }
     return NextResponse.json({ error: "internal_error" }, { status: 500 });
   }
 }
