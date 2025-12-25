@@ -1,21 +1,28 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, lazy, Suspense } from "react";
 import Link from "next/link";
-import TemplateCard from "@/components/marketplace/TemplateCard";
 import TemplateCardSkeleton from "@/components/shared/TemplateCardSkeleton";
 import { getFeaturedTemplates } from "@/lib/db/queries";
 import { getFeaturedTemplates as getLocalFeaturedTemplates } from "@/lib/data";
 import { Template } from "@/lib/types";
+import { useToast } from "@/lib/utils/toast";
+import { getErrorMessage } from "@/lib/utils/errors";
+
+// Lazy load TemplateCard for code splitting
+const TemplateCard = lazy(() => import("@/components/marketplace/TemplateCard"));
 
 export default function FeaturedTemplates() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
 
   useEffect(() => {
     async function fetchTemplates() {
       try {
         setLoading(true);
+        setError(null);
         const data = await getFeaturedTemplates();
         // Always ensure we have at least local data as fallback
         if (data.length === 0) {
@@ -24,18 +31,21 @@ export default function FeaturedTemplates() {
         } else {
           setTemplates(data);
         }
-      } catch (error) {
-        console.warn("Failed to load templates:", error);
+      } catch (err) {
+        const errorMessage = getErrorMessage(err);
+        console.warn("Failed to load templates:", err);
+        setError(errorMessage);
         // Fallback to local data on error
         const localData = getLocalFeaturedTemplates();
         setTemplates(localData);
+        toast.warning("Using cached templates. Some features may be limited.");
       } finally {
         setLoading(false);
       }
     }
 
     fetchTemplates();
-  }, []);
+  }, [toast]);
 
   return (
     <section className="py-20 md:py-32 bg-azone-black">
@@ -65,19 +75,20 @@ export default function FeaturedTemplates() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 lg:gap-10 overflow-visible">
             {templates.map((template, index) => (
-              <TemplateCard
-                key={template.id}
-                id={template.id}
-                title={template.title}
-                category={template.category}
-                price={template.price}
-                techStack={template.techStack}
-                imageUrl={template.imageUrl}
-                slug={template.slug}
-                updatedAt={template.updatedAt}
-                featured={template.featured}
-                index={index}
-              />
+              <Suspense key={template.id} fallback={<TemplateCardSkeleton />}>
+                <TemplateCard
+                  id={template.id}
+                  title={template.title}
+                  category={template.category}
+                  price={template.price}
+                  techStack={template.techStack}
+                  imageUrl={template.imageUrl}
+                  slug={template.slug}
+                  updatedAt={template.updatedAt}
+                  featured={template.featured}
+                  index={index}
+                />
+              </Suspense>
             ))}
           </div>
         )}

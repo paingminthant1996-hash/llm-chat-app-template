@@ -37,6 +37,11 @@
   "exclude": [
     "node_modules",
     "scripts",
-    "supabase"
+    "supabase",
+    "__tests__",
+    "e2e",
+    "playwright.config.ts",
+    "jest.config.js",
+    "jest.setup.js"
   ]
 }

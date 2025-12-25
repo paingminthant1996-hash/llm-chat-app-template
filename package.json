@@ -7,10 +7,16 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "generate:og": "tsx scripts/generate-og-image.ts"
+    "generate:og": "tsx scripts/generate-og-image.ts",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
     "@stripe/stripe-js": "^8.6.0",
+    "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.89.0",
     "@vercel/og": "^0.8.6",
     "clsx": "^2.1.1",

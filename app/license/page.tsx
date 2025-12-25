@@ -3,6 +3,25 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "License Agreement - Azone.store",
   description: "License agreement for Azone.store templates. Usage rights and restrictions for purchased templates.",
+  openGraph: {
+    type: "website",
+    url: "https://store.paing.xyz/license",
+    title: "License Agreement - Azone.store",
+    description: "License agreement for Azone.store templates. Usage rights and restrictions for purchased templates.",
+    siteName: "Azone.store",
+  },
+  twitter: {
+    card: "summary",
+    title: "License Agreement - Azone.store",
+    description: "License agreement for Azone.store templates.",
+  },
+  alternates: {
+    canonical: "https://store.paing.xyz/license",
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
 };
 
 export default function LicensePage() {

@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
+import { ErrorBoundary } from "@/components/shared/ErrorBoundary";
+import { ToastProvider } from "@/lib/utils/toast";
 
 export const metadata: Metadata = {
   title: "Azone.store - Production-Ready Templates for Serious Builders",
@@ -58,11 +60,15 @@ export default function RootLayout({
   return (
     <html lang="en" className="scroll-smooth dark">
       <body className="min-h-screen flex flex-col bg-azone-black">
-        <Header />
-        <main className="flex-1">
-          {children}
-        </main>
-        <Footer />
+        <ErrorBoundary>
+          <ToastProvider>
+            <Header />
+            <main className="flex-1">
+              {children}
+            </main>
+            <Footer />
+          </ToastProvider>
+        </ErrorBoundary>
       </body>
     </html>
   );

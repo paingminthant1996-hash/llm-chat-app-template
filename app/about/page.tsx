@@ -4,6 +4,37 @@ import Link from "next/link";
 export const metadata: Metadata = {
   title: "About - Azone.store",
   description: "We accelerate startups with high-quality UI foundations. Built for production. Designed for scale.",
+  keywords: [
+    "about",
+    "mission",
+    "team",
+    "startup acceleration",
+    "UI foundations",
+  ],
+  openGraph: {
+    type: "website",
+    url: "https://store.paing.xyz/about",
+    title: "About - Azone.store",
+    description: "We accelerate startups with high-quality UI foundations. Built for production. Designed for scale.",
+    siteName: "Azone.store",
+    images: [
+      {
+        url: "https://store.paing.xyz/og",
+        width: 1200,
+        height: 630,
+        alt: "About Azone.store",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "About - Azone.store",
+    description: "We accelerate startups with high-quality UI foundations.",
+    images: ["https://store.paing.xyz/og"],
+  },
+  alternates: {
+    canonical: "https://store.paing.xyz/about",
+  },
 };
 
 export default function AboutPage() {

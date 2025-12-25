@@ -3,6 +3,25 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "Terms of Service - Azone.store",
   description: "Terms of Service for Azone.store. Rules and guidelines for using our platform and templates.",
+  openGraph: {
+    type: "website",
+    url: "https://store.paing.xyz/terms",
+    title: "Terms of Service - Azone.store",
+    description: "Terms of Service for Azone.store. Rules and guidelines for using our platform and templates.",
+    siteName: "Azone.store",
+  },
+  twitter: {
+    card: "summary",
+    title: "Terms of Service - Azone.store",
+    description: "Terms of Service for Azone.store.",
+  },
+  alternates: {
+    canonical: "https://store.paing.xyz/terms",
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
 };
 
 export default function TermsPage() {

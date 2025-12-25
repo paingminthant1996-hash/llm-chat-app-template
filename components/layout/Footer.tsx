@@ -114,6 +114,14 @@ export default function Footer() {
                   Contact
                 </Link>
               </li>
+              <li>
+                <Link
+                  href="/admin/upload"
+                  className="text-sm text-azone-purple hover:text-purple-400 transition-colors"
+                >
+                  Admin Upload
+                </Link>
+              </li>
             </ul>
           </div>
 

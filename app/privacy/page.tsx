@@ -3,6 +3,25 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "Privacy Policy - Azone.store",
   description: "Privacy Policy for Azone.store. How we collect, use, and protect your data.",
+  openGraph: {
+    type: "website",
+    url: "https://store.paing.xyz/privacy",
+    title: "Privacy Policy - Azone.store",
+    description: "Privacy Policy for Azone.store. How we collect, use, and protect your data.",
+    siteName: "Azone.store",
+  },
+  twitter: {
+    card: "summary",
+    title: "Privacy Policy - Azone.store",
+    description: "Privacy Policy for Azone.store.",
+  },
+  alternates: {
+    canonical: "https://store.paing.xyz/privacy",
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
 };
 
 export default function PrivacyPage() {

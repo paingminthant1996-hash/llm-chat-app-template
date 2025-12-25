@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { createClient } from "@supabase/supabase-js";
+import { sendPurchaseConfirmationEmail } from "@/app/actions/send-email";
 
 // Lazy initialization to avoid build-time errors
 const getStripe = () => {
@@ -172,6 +173,22 @@ export async function POST(req: NextRequest) {
           { error: "Failed to record purchase" },
           { status: 500 }
         );
+      }
+
+      // Send purchase confirmation email
+      if (templateTitle) {
+        try {
+          await sendPurchaseConfirmationEmail(
+            customerEmail,
+            templateTitle,
+            price,
+            session.currency?.toUpperCase() || "USD"
+          );
+          console.log(`Purchase confirmation email sent to ${customerEmail}`);
+        } catch (emailError) {
+          // Don't fail the webhook if email fails
+          console.error("Failed to send purchase confirmation email:", emailError);
+        }
       }
 
       console.log(`Purchase recorded for user ${userId}, template ${templateId}`);

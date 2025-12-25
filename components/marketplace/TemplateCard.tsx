@@ -185,6 +185,8 @@ export default function TemplateCard({
                 alt={title}
                 fill
                 className="object-cover group-hover:scale-105 transition-transform duration-300 ease-[cubic-bezier(0.25,0.1,0.25,1)]"
+                loading="lazy"
+                sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
               />
               {/* Gradient Overlay */}
               <div className="absolute inset-0 bg-gradient-to-t from-gray-900/80 via-transparent to-transparent"></div>

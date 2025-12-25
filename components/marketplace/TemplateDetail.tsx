@@ -31,11 +31,21 @@ import {
   Copy,
   CheckCircle,
   Download,
-  AlertCircle
+  AlertCircle,
+  X,
+  Share2,
+  Twitter,
+  Facebook,
+  Linkedin,
+  Link as LinkIcon
 } from "lucide-react";
 import { Template } from "@/lib/types";
 import { supabase } from "@/lib/db/supabase";
 import { getTemplateDetail, requestDownloadSource } from "@/lib/db/queries";
+import { getSession } from "@/lib/auth/auth";
+import { hasUserPurchasedTemplate, getDownloadUrl } from "@/lib/auth/purchases";
+import { getAllTemplates } from "@/lib/db/queries";
+import Link from "next/link";
 
 interface TemplateDetailProps {
   template: Template;
@@ -362,22 +372,22 @@ export default function TemplateDetail({ template }: TemplateDetailProps) {
   // Download functionality state
   const [downloadLoading, setDownloadLoading] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
-  const [user, setUser] = useState<any | null>(null);
+  const [user, setUser] = useState<{ id: string; email: string } | null>(null);
   const [templateVersions, setTemplateVersions] = useState<any[]>([]);
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
   const [hasAccess, setHasAccess] = useState(false);
+  const [checkingAccess, setCheckingAccess] = useState(true);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+  const [relatedTemplates, setRelatedTemplates] = useState<Template[]>([]);
 
   // Fetch user and template details on mount
   useEffect(() => {
     const initDownload = async () => {
-      if (!supabase) return;
-
       try {
-        // Get current user
-        const {
-          data: { user: currentUser },
-        } = await supabase.auth.getUser();
-        setUser(currentUser ?? null);
+        // Get current user session
+        const { user: currentUser } = await getSession();
+        setUser(currentUser);
 
         // Fetch template detail with versions
         const templateDetail = await getTemplateDetail(template.slug);
@@ -388,13 +398,44 @@ export default function TemplateDetail({ template }: TemplateDetailProps) {
             setSelectedVersionId(versions[0].id);
           }
         }
+
+        // Check if user has purchased this template
+        if (currentUser) {
+          const purchased = await hasUserPurchasedTemplate(currentUser.id, template.id);
+          setHasAccess(purchased);
+        }
       } catch (err) {
         console.error("Failed to initialize download:", err);
+      } finally {
+        setCheckingAccess(false);
       }
     };
 
     initDownload();
-  }, [template.slug]);
+
+    // Load related templates
+    const loadRelatedTemplates = async () => {
+      try {
+        const allTemplates = await getAllTemplates();
+        // Get templates from same category, excluding current template
+        const related = allTemplates
+          .filter(t => t.id !== template.id && t.category === template.category)
+          .slice(0, 4);
+        // If not enough from same category, add featured templates
+        if (related.length < 4) {
+          const featured = allTemplates
+            .filter(t => t.id !== template.id && t.featured && !related.find(r => r.id === t.id))
+            .slice(0, 4 - related.length);
+          setRelatedTemplates([...related, ...featured]);
+        } else {
+          setRelatedTemplates(related);
+        }
+      } catch (err) {
+        console.error("Failed to load related templates:", err);
+      }
+    };
+    loadRelatedTemplates();
+  }, [template.slug, template.id, template.category]);
 
   // Download handler
   const handleDownload = async () => {
@@ -403,8 +444,14 @@ export default function TemplateDetail({ template }: TemplateDetailProps) {
       return;
     }
 
-    if (!supabase) {
-      setDownloadError("Supabase not configured");
+    if (!user) {
+      setDownloadError("Please sign in to download");
+      router.push("/admin/login?redirect=" + encodeURIComponent(window.location.pathname));
+      return;
+    }
+
+    if (!hasAccess) {
+      setDownloadError("You need to purchase this template first");
       return;
     }
 
@@ -412,32 +459,15 @@ export default function TemplateDetail({ template }: TemplateDetailProps) {
     setDownloadError(null);
 
     try {
-      // Get current session to obtain access token
-      const {
-        data: { session },
-        error: sessionError,
-      } = await supabase.auth.getSession();
+      // Get download URL using new purchase utilities
+      const { url, error: downloadError } = await getDownloadUrl(user.id, selectedVersionId);
 
-      if (sessionError) throw sessionError;
-      if (!session?.access_token) {
-        setDownloadError("Please sign in to download");
-        setDownloadLoading(false);
-        return;
-      }
-
-      // Call download API
-      const result = await requestDownloadSource(selectedVersionId, session.access_token);
-
-      if (result.error) {
-        throw new Error(result.error);
-      }
-
-      if (!result.url) {
-        throw new Error("No download URL returned");
+      if (downloadError || !url) {
+        throw new Error(downloadError || "Failed to get download URL");
       }
 
       // Open signed URL in new tab to trigger download
-      window.open(result.url, "_blank", "noopener,noreferrer");
+      window.open(url, "_blank", "noopener,noreferrer");
     } catch (err: any) {
       console.error("Download error:", err);
       setDownloadError(err?.message || "Download failed. Please ensure you have purchased this template.");
@@ -450,6 +480,33 @@ export default function TemplateDetail({ template }: TemplateDetailProps) {
   const allImages = template.imageUrl
     ? [template.imageUrl, ...(template.screenshotUrls || [])]
     : template.screenshotUrls || [];
+
+  // Social sharing functions
+  const shareUrl = typeof window !== 'undefined' ? window.location.href : '';
+  const shareText = `Check out ${template.title} on Azone.store - ${template.shortDescription || template.description}`;
+
+  const handleShare = async (platform: string) => {
+    const url = encodeURIComponent(shareUrl);
+    const text = encodeURIComponent(shareText);
+
+    switch (platform) {
+      case 'twitter':
+        window.open(`https://twitter.com/intent/tweet?url=${url}&text=${text}`, '_blank');
+        break;
+      case 'facebook':
+        window.open(`https://www.facebook.com/sharer/sharer.php?u=${url}`, '_blank');
+        break;
+      case 'linkedin':
+        window.open(`https://www.linkedin.com/sharing/share-offsite/?url=${url}`, '_blank');
+        break;
+      case 'copy':
+        if (navigator.clipboard) {
+          await navigator.clipboard.writeText(shareUrl);
+          alert('Link copied to clipboard!');
+        }
+        break;
+    }
+  };
 
   useEffect(() => {
     const handleScroll = () => {
@@ -629,16 +686,31 @@ export default function TemplateDetail({ template }: TemplateDetailProps) {
             <motion.div variants={itemVariants} className="space-y-6">
               <h2 className="text-3xl font-semibold text-white mb-6">Gallery</h2>
 
-              {/* Main Image */}
-              <div className="relative w-full h-[500px] md:h-[600px] rounded-3xl overflow-hidden bg-gray-950 border border-gray-800/50">
+              {/* Main Image with Lightbox */}
+              <div 
+                className="relative w-full h-[500px] md:h-[600px] rounded-3xl overflow-hidden bg-gray-950 border border-gray-800/50 cursor-pointer group"
+                onClick={() => {
+                  if (allImages.length > 0) {
+                    setLightboxImage(allImages[selectedImage]);
+                    setLightboxOpen(true);
+                  }
+                }}
+              >
                 {allImages.length > 0 ? (
-                  <Image
-                    src={allImages[selectedImage]}
-                    alt={`${template.title} - Screenshot ${selectedImage + 1}`}
-                    fill
-                    className="object-cover"
-                    priority={selectedImage === 0}
-                  />
+                  <>
+                    <Image
+                      src={allImages[selectedImage]}
+                      alt={`${template.title} - Screenshot ${selectedImage + 1}`}
+                      fill
+                      className="object-cover transition-transform duration-300 group-hover:scale-105"
+                      priority={selectedImage === 0}
+                    />
+                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                      <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-white/10 backdrop-blur-sm rounded-full p-3">
+                        <Eye className="w-6 h-6 text-white" />
+                      </div>
+                    </div>
+                  </>
                 ) : (
                   <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950">
                     <div className="w-32 h-32 bg-gradient-to-br from-gray-800/40 to-gray-800/20 rounded-2xl flex items-center justify-center backdrop-blur-sm border border-gray-700/30">
@@ -667,7 +739,7 @@ export default function TemplateDetail({ template }: TemplateDetailProps) {
                     <motion.button
                       key={index}
                       onClick={() => setSelectedImage(index)}
-                      className={`relative aspect-video rounded-xl overflow-hidden border-2 transition-all duration-300 ${selectedImage === index
+                      className={`relative aspect-video rounded-xl overflow-hidden border-2 transition-all duration-300 cursor-pointer ${selectedImage === index
                         ? "border-azone-purple shadow-lg shadow-azone-purple/30"
                         : "border-gray-800/50 hover:border-gray-700"
                         }`}
@@ -799,94 +871,108 @@ export default function TemplateDetail({ template }: TemplateDetailProps) {
                   <p className="text-sm text-gray-500">One-time payment</p>
                 </div>
 
-                {/* Primary CTA - Purchase Now */}
-                <motion.button
-                  onClick={async () => {
-                    setIsLoading(true);
-                    try {
-                      const response = await fetch("/api/checkout", {
-                        method: "POST",
-                        headers: {
-                          "Content-Type": "application/json",
-                        },
-                        body: JSON.stringify({
-                          templateId: template.id,
-                          templateSlug: template.slug,
-                          templateTitle: template.title,
-                          price: template.price,
-                        }),
-                      });
-
-                      const data = await response.json();
-
-                      if (data.url) {
-                        // Redirect to Stripe Checkout
-                        window.location.href = data.url;
-                      } else {
-                        console.error("Failed to create checkout session");
-                        alert("Failed to initiate checkout. Please try again.");
-                        setIsLoading(false);
-                      }
-                    } catch (error) {
-                      console.error("Checkout error:", error);
-                      alert("An error occurred. Please try again.");
-                      setIsLoading(false);
-                    }
-                  }}
-                  disabled={isLoading}
-                  className="w-full py-4 px-6 bg-azone-purple text-white rounded-xl font-semibold text-lg transition-all duration-300 mb-4 flex items-center justify-center gap-2 group/btn relative overflow-hidden disabled:opacity-50 disabled:cursor-not-allowed"
-                  whileHover={!isLoading ? { scale: 1.02, y: -2 } : {}}
-                  whileTap={!isLoading ? { scale: 0.98 } : {}}
-                  transition={{
-                    duration: 0.25,
-                    ease: [0.25, 0.1, 0.25, 1],
-                    delay: 0.05,
-                  }}
-                >
-                  {/* Purple Glow Effect */}
-                  <div className="absolute inset-0 bg-gradient-to-r from-azone-purple via-purple-600 to-azone-purple opacity-0 group-hover/btn:opacity-100 transition-opacity duration-300 blur-xl"></div>
-                  <div className="relative z-10 flex items-center gap-2">
-                    {isLoading ? (
-                      <>
-                        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                        <span>Processing...</span>
-                      </>
-                    ) : (
-                      <>
-                        <ShoppingCart className="w-5 h-5" />
-                        Purchase Now
-                        <ArrowRight className="w-5 h-5 group-hover/btn:translate-x-1 transition-transform duration-300 ease-out" />
-                      </>
-                    )}
+                {/* Primary CTA - Purchase Now or Download */}
+                {checkingAccess ? (
+                  <div className="w-full py-4 px-6 bg-gray-800/50 text-gray-500 rounded-xl font-semibold text-lg mb-4 flex items-center justify-center gap-2">
+                    <div className="w-5 h-5 border-2 border-gray-500 border-t-transparent rounded-full animate-spin"></div>
+                    <span>Checking access...</span>
                   </div>
-                </motion.button>
-
-                {/* Download Button - For Purchased Templates */}
-                {user && selectedVersionId && (
-                  <motion.button
-                    onClick={handleDownload}
-                    disabled={downloadLoading || !selectedVersionId}
-                    className={`w-full py-3.5 px-6 rounded-xl font-semibold text-base transition-all duration-300 flex items-center justify-center gap-2 group/download relative overflow-hidden mb-4 ${downloadLoading || !selectedVersionId
-                        ? "bg-gray-800/50 text-gray-500 cursor-not-allowed"
-                        : "bg-green-600/90 hover:bg-green-600 text-white border-2 border-green-500/50"
-                      }`}
-                    whileHover={!downloadLoading && selectedVersionId ? { scale: 1.02, y: -2 } : {}}
-                    whileTap={!downloadLoading && selectedVersionId ? { scale: 0.98 } : {}}
-                  >
-                    <div className="relative z-10 flex items-center gap-2">
-                      {downloadLoading ? (
-                        <>
-                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                          <span>Preparing...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Download className="w-4 h-4" />
-                          Download Source
-                        </>
-                      )}
+                ) : hasAccess ? (
+                  <>
+                    {/* Download Button - User has purchased */}
+                    <motion.button
+                      onClick={handleDownload}
+                      disabled={downloadLoading || !selectedVersionId}
+                      className={`w-full py-4 px-6 rounded-xl font-semibold text-lg transition-all duration-300 flex items-center justify-center gap-2 group/download relative overflow-hidden mb-4 ${downloadLoading || !selectedVersionId
+                          ? "bg-gray-800/50 text-gray-500 cursor-not-allowed"
+                          : "bg-green-600/90 hover:bg-green-600 text-white border-2 border-green-500/50"
+                        }`}
+                      whileHover={!downloadLoading && selectedVersionId ? { scale: 1.02, y: -2 } : {}}
+                      whileTap={!downloadLoading && selectedVersionId ? { scale: 0.98 } : {}}
+                    >
+                      <div className="relative z-10 flex items-center gap-2">
+                        {downloadLoading ? (
+                          <>
+                            <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                            <span>Preparing Download...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Download className="w-5 h-5" />
+                            Download Template
+                            <ArrowRight className="w-5 h-5 group-hover/download:translate-x-1 transition-transform duration-300 ease-out" />
+                          </>
+                        )}
+                      </div>
+                    </motion.button>
+                    <div className="mb-4 p-3 bg-green-500/10 border border-green-500/30 rounded-lg text-sm text-green-400 text-center">
+                      ✓ You own this template
                     </div>
-                  </motion.button>
+                  </>
+                ) : (
+                  <>
+                    {/* Purchase Button - User hasn't purchased */}
+                    <motion.button
+                      onClick={async () => {
+                        setIsLoading(true);
+                        try {
+                          const response = await fetch("/api/checkout", {
+                            method: "POST",
+                            headers: {
+                              "Content-Type": "application/json",
+                            },
+                            body: JSON.stringify({
+                              templateId: template.id,
+                              templateSlug: template.slug,
+                              templateTitle: template.title,
+                              price: template.price,
+                            }),
+                          });
+
+                          const data = await response.json();
+
+                          if (data.url) {
+                            // Redirect to Stripe Checkout
+                            window.location.href = data.url;
+                          } else {
+                            console.error("Failed to create checkout session");
+                            alert("Failed to initiate checkout. Please try again.");
+                            setIsLoading(false);
+                          }
+                        } catch (error) {
+                          console.error("Checkout error:", error);
+                          alert("An error occurred. Please try again.");
+                          setIsLoading(false);
+                        }
+                      }}
+                      disabled={isLoading}
+                      className="w-full py-4 px-6 bg-azone-purple text-white rounded-xl font-semibold text-lg transition-all duration-300 mb-4 flex items-center justify-center gap-2 group/btn relative overflow-hidden disabled:opacity-50 disabled:cursor-not-allowed"
+                      whileHover={!isLoading ? { scale: 1.02, y: -2 } : {}}
+                      whileTap={!isLoading ? { scale: 0.98 } : {}}
+                      transition={{
+                        duration: 0.25,
+                        ease: [0.25, 0.1, 0.25, 1],
+                        delay: 0.05,
+                      }}
+                    >
+                      {/* Purple Glow Effect */}
+                      <div className="absolute inset-0 bg-gradient-to-r from-azone-purple via-purple-600 to-azone-purple opacity-0 group-hover/btn:opacity-100 transition-opacity duration-300 blur-xl"></div>
+                      <div className="relative z-10 flex items-center gap-2">
+                        {isLoading ? (
+                          <>
+                            <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                            <span>Processing...</span>
+                          </>
+                        ) : (
+                          <>
+                            <ShoppingCart className="w-5 h-5" />
+                            Purchase Now
+                            <ArrowRight className="w-5 h-5 group-hover/btn:translate-x-1 transition-transform duration-300 ease-out" />
+                          </>
+                        )}
+                      </div>
+                    </motion.button>
+                  </>
                 )}
 
                 {/* Download Error Message */}
@@ -1059,7 +1145,182 @@ export default function TemplateDetail({ template }: TemplateDetailProps) {
             </motion.div>
           </div>
         </div>
+
+        {/* Social Sharing Section */}
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.4 }}
+          className="container mx-auto px-4 sm:px-6 lg:px-8 py-12"
+        >
+          <div className="max-w-4xl mx-auto">
+            <div className="bg-gray-900/50 backdrop-blur-sm border border-gray-800 rounded-2xl p-8">
+              <h3 className="text-xl font-semibold text-white mb-6 flex items-center gap-2">
+                <Share2 className="w-5 h-5 text-azone-purple" />
+                Share this Template
+              </h3>
+              <div className="flex flex-wrap gap-3">
+                <motion.button
+                  onClick={() => handleShare('twitter')}
+                  className="px-4 py-2.5 bg-[#1DA1F2]/20 hover:bg-[#1DA1F2]/30 text-[#1DA1F2] rounded-lg font-medium transition-all flex items-center gap-2 border border-[#1DA1F2]/30"
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <Twitter className="w-4 h-4" />
+                  Twitter
+                </motion.button>
+                <motion.button
+                  onClick={() => handleShare('facebook')}
+                  className="px-4 py-2.5 bg-[#1877F2]/20 hover:bg-[#1877F2]/30 text-[#1877F2] rounded-lg font-medium transition-all flex items-center gap-2 border border-[#1877F2]/30"
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <Facebook className="w-4 h-4" />
+                  Facebook
+                </motion.button>
+                <motion.button
+                  onClick={() => handleShare('linkedin')}
+                  className="px-4 py-2.5 bg-[#0A66C2]/20 hover:bg-[#0A66C2]/30 text-[#0A66C2] rounded-lg font-medium transition-all flex items-center gap-2 border border-[#0A66C2]/30"
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <Linkedin className="w-4 h-4" />
+                  LinkedIn
+                </motion.button>
+                <motion.button
+                  onClick={() => handleShare('copy')}
+                  className="px-4 py-2.5 bg-gray-800/50 hover:bg-gray-800 text-gray-300 rounded-lg font-medium transition-all flex items-center gap-2 border border-gray-700"
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <LinkIcon className="w-4 h-4" />
+                  Copy Link
+                </motion.button>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* Related Templates / You May Also Like Section */}
+        {relatedTemplates.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.5 }}
+            className="container mx-auto px-4 sm:px-6 lg:px-8 py-12"
+          >
+            <div className="max-w-7xl mx-auto">
+              <h2 className="text-3xl font-bold text-white mb-8">You May Also Like</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                {relatedTemplates.map((relatedTemplate) => (
+                  <Link
+                    key={relatedTemplate.id}
+                    href={`/templates/${relatedTemplate.slug}`}
+                    className="group"
+                  >
+                    <motion.div
+                      className="bg-gray-900/50 backdrop-blur-sm border border-gray-800 rounded-2xl overflow-hidden hover:border-azone-purple/50 transition-all duration-300"
+                      whileHover={{ y: -4 }}
+                    >
+                      <div className="relative aspect-video overflow-hidden bg-gray-950">
+                        {relatedTemplate.imageUrl ? (
+                          <Image
+                            src={relatedTemplate.imageUrl}
+                            alt={relatedTemplate.title}
+                            fill
+                            className="object-cover group-hover:scale-110 transition-transform duration-300"
+                          />
+                        ) : (
+                          <div className="absolute inset-0 bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950"></div>
+                        )}
+                      </div>
+                      <div className="p-4">
+                        <h3 className="text-lg font-semibold text-white mb-2 group-hover:text-azone-purple transition-colors">
+                          {relatedTemplate.title}
+                        </h3>
+                        <p className="text-sm text-gray-400 mb-3 line-clamp-2">
+                          {relatedTemplate.shortDescription || relatedTemplate.description}
+                        </p>
+                        <div className="flex items-center justify-between">
+                          <span className="text-azone-purple font-bold">
+                            ${Math.round(relatedTemplate.price)}
+                          </span>
+                          <ArrowRight className="w-4 h-4 text-gray-400 group-hover:text-azone-purple group-hover:translate-x-1 transition-all" />
+                        </div>
+                      </div>
+                    </motion.div>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+        )}
       </motion.div>
+
+      {/* Lightbox Modal */}
+      <AnimatePresence>
+        {lightboxOpen && lightboxImage && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-md flex items-center justify-center p-4"
+            onClick={() => setLightboxOpen(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="relative max-w-7xl max-h-[90vh] w-full h-full"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                onClick={() => setLightboxOpen(false)}
+                className="absolute top-4 right-4 z-10 w-10 h-10 bg-gray-900/80 hover:bg-gray-800 rounded-full flex items-center justify-center text-white transition-all"
+              >
+                <X className="w-5 h-5" />
+              </button>
+              <div className="relative w-full h-full flex items-center justify-center">
+                <Image
+                  src={lightboxImage}
+                  alt={`${template.title} - Full view`}
+                  fill
+                  className="object-contain"
+                />
+              </div>
+              {/* Navigation */}
+              {allImages.length > 1 && (
+                <>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const currentIndex = allImages.indexOf(lightboxImage);
+                      const prevIndex = currentIndex > 0 ? currentIndex - 1 : allImages.length - 1;
+                      setLightboxImage(allImages[prevIndex]);
+                      setSelectedImage(prevIndex);
+                    }}
+                    className="absolute left-4 top-1/2 -translate-y-1/2 w-12 h-12 bg-gray-900/80 hover:bg-gray-800 rounded-full flex items-center justify-center text-white transition-all"
+                  >
+                    <ArrowRight className="w-5 h-5 rotate-180" />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const currentIndex = allImages.indexOf(lightboxImage);
+                      const nextIndex = currentIndex < allImages.length - 1 ? currentIndex + 1 : 0;
+                      setLightboxImage(allImages[nextIndex]);
+                      setSelectedImage(nextIndex);
+                    }}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 w-12 h-12 bg-gray-900/80 hover:bg-gray-800 rounded-full flex items-center justify-center text-white transition-all"
+                  >
+                    <ArrowRight className="w-5 h-5" />
+                  </button>
+                </>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
