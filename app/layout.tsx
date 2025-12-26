@@ -4,6 +4,7 @@ import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import { ErrorBoundary } from "@/components/shared/ErrorBoundary";
 import { ToastProvider } from "@/lib/utils/toast";
+import { Analytics } from "@vercel/analytics/next";
 
 export const metadata: Metadata = {
   title: "Azone.store - Production-Ready Templates for Serious Builders",
@@ -69,6 +70,7 @@ export default function RootLayout({
             <Footer />
           </ToastProvider>
         </ErrorBoundary>
+        <Analytics />
       </body>
     </html>
   );
