@@ -1,7 +1,7 @@
 "use server";
 
 // Email notification utilities
-// This is a placeholder - integrate with your email service (Resend, SendGrid, etc.)
+import { Resend } from "resend";
 
 interface EmailOptions {
   to: string;
@@ -11,17 +11,28 @@ interface EmailOptions {
 }
 
 /**
- * Send email notification (placeholder)
- * TODO: Integrate with email service (Resend, SendGrid, etc.)
+ * Send email notification using Resend
  */
 export async function sendEmail(options: EmailOptions): Promise<{ success: boolean; error?: string }> {
   try {
-    // Placeholder - Replace with actual email service integration
-    // Example with Resend:
-    /*
-    const resend = new Resend(process.env.RESEND_API_KEY);
+    // Check if Resend API key is configured
+    const resendApiKey = process.env.RESEND_API_KEY;
+
+    if (!resendApiKey) {
+      // Fallback: log email in development mode
+      console.log("📧 Email would be sent (RESEND_API_KEY not configured):", {
+        to: options.to,
+        subject: options.subject,
+      });
+      return { success: true };
+    }
+
+    // Initialize Resend client
+    const resend = new Resend(resendApiKey);
+
+    // Send email via Resend
     const { data, error } = await resend.emails.send({
-      from: 'Azone.store <noreply@store.paing.xyz>',
+      from: process.env.RESEND_FROM_EMAIL || 'Azone.store <noreply@store.paing.xyz>',
       to: options.to,
       subject: options.subject,
       html: options.html,
@@ -29,16 +40,14 @@ export async function sendEmail(options: EmailOptions): Promise<{ success: boole
     });
 
     if (error) {
-      return { success: false, error: error.message };
+      console.error("Resend API error:", error);
+      return { success: false, error: error.message || "Failed to send email" };
     }
 
-    return { success: true };
-    */
-
-    // For now, just log the email (development mode)
-    console.log("📧 Email would be sent:", {
+    console.log("📧 Email sent successfully:", {
       to: options.to,
       subject: options.subject,
+      id: data?.id,
     });
 
     return { success: true };
