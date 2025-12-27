@@ -4,7 +4,7 @@ import { useState } from "react";
 import Image from "next/image";
 import { motion } from "framer-motion";
 import { Upload, X, Check, AlertCircle } from "lucide-react";
-// Using API route for file uploads to handle large files
+// Upload files via API route (uses service role key - bypasses RLS policies)
 
 type Status = "draft" | "private" | "public";
 type LicenseType = "personal" | "commercial" | "extended";
@@ -46,6 +46,31 @@ export default function AdminUploadPage() {
     const [success, setSuccess] = useState<string | null>(null);
     const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
     const [uploadProgress, setUploadProgress] = useState<string>("");
+
+    // Upload file via API route (uses service role key - bypasses RLS policies)
+    const uploadFileToStorage = async (file: File, folder: "previews" | "downloads", templateSlug: string): Promise<string> => {
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("folder", folder);
+        formData.append("templateSlug", templateSlug);
+
+        const response = await fetch("/api/upload-file", {
+            method: "POST",
+            body: formData,
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ error: "Upload failed" }));
+            throw new Error(errorData.error || `Upload failed: ${response.status}`);
+        }
+
+        const result = await response.json();
+        if (!result.url) {
+            throw new Error("Failed to get upload URL");
+        }
+
+        return result.url;
+    };
 
     const frameworkOptions = ["Next.js", "React", "Vue", "Svelte", "Angular"];
     const categoryOptions = [
@@ -214,6 +239,31 @@ export default function AdminUploadPage() {
         setUploadProgress("Preparing upload...");
 
         try {
+            // Generate slug for file naming
+            const slug = formData.title
+                .toLowerCase()
+                .trim()
+                .replace(/[^\w\s-]/g, "")
+                .replace(/[\s_-]+/g, "-")
+                .replace(/^-+|-+$/g, "");
+
+            // Step 1: Upload files directly to Supabase Storage (bypasses Vercel 4.5MB limit)
+            setUploadProgress("Uploading files to storage...");
+            let imageUrl = "";
+            let zipUrl = "";
+
+            if (imageFile) {
+                setUploadProgress("Uploading preview image...");
+                imageUrl = await uploadFileToStorage(imageFile, "previews", slug);
+            }
+
+            if (zipFile) {
+                setUploadProgress("Uploading template ZIP file...");
+                zipUrl = await uploadFileToStorage(zipFile, "downloads", slug);
+            }
+
+            // Step 2: Send only URLs and form data to API route (small payload)
+            setUploadProgress("Saving template data...");
             const formDataToSend = new FormData();
 
             // Basic Info
@@ -228,9 +278,9 @@ export default function AdminUploadPage() {
             // Live Demo
             formDataToSend.append("demoUrl", formData.demoUrl);
 
-            // Media
-            if (imageFile) formDataToSend.append("image", imageFile);
-            if (zipFile) formDataToSend.append("zipFile", zipFile);
+            // Media URLs (not files)
+            formDataToSend.append("imageUrl", imageUrl);
+            formDataToSend.append("zipUrl", zipUrl);
 
             // Tech Stack
             formDataToSend.append("techStack", JSON.stringify({
@@ -248,20 +298,11 @@ export default function AdminUploadPage() {
             formDataToSend.append("metaDescription", formData.metaDescription || formData.shortDescription);
             formDataToSend.append("keywords", formData.keywords);
 
-            setUploadProgress("Uploading files...");
-
-            // Use API route instead of server action to handle large files
-            // Add timeout for large file uploads (60 seconds)
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 seconds timeout
-
             const response = await fetch("/api/upload-template", {
                 method: "POST",
                 body: formDataToSend,
-                signal: controller.signal,
             });
 
-            clearTimeout(timeoutId);
             setUploadProgress("Processing...");
 
             // Check if response is ok
@@ -330,7 +371,8 @@ export default function AdminUploadPage() {
             let errorMessage = "Failed to upload template. Please check your connection and try again.";
 
             if (err.name === "AbortError") {
-                errorMessage = "Upload timeout. File may be too large. Please try again or reduce file size.";
+                const fileSize = zipFile ? `${(zipFile.size / 1024 / 1024).toFixed(2)} MB` : "unknown size";
+                errorMessage = `Upload timeout after 3 minutes. File size: ${fileSize}. Please try again or reduce file size (max 100MB).`;
             } else if (err.message) {
                 errorMessage = err.message;
             }

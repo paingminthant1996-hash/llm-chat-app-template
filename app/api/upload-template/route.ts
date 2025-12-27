@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { revalidatePath } from "next/cache";
 
 // Configure for large file uploads
-export const maxDuration = 60; // 60 seconds for large file uploads
+export const maxDuration = 180; // 180 seconds (3 minutes) for large file uploads
 export const runtime = "nodejs"; // Use Node.js runtime for file handling
 
 // Initialize Supabase admin client
@@ -33,46 +33,9 @@ function generateSlug(title: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
-// Upload file to Supabase Storage
-async function uploadFileToStorage(
-  supabase: ReturnType<typeof getSupabaseAdmin>,
-  file: File,
-  templateSlug: string,
-  folder: "previews" | "downloads"
-): Promise<string> {
-  const bucketName = "template-assets";
-  const fileExt = file.name.split(".").pop();
-  const fileName = `${templateSlug}-${Date.now()}.${fileExt}`;
-  const filePath = `${folder}/${fileName}`;
-
-  // Convert File to ArrayBuffer
-  const arrayBuffer = await file.arrayBuffer();
-  const fileBuffer = Buffer.from(arrayBuffer);
-
-  // Upload to Supabase Storage
-  const { data, error } = await supabase.storage
-    .from(bucketName)
-    .upload(filePath, fileBuffer, {
-      contentType: file.type,
-      upsert: false,
-    });
-
-  if (error) {
-    console.error("Storage upload error:", error);
-    throw new Error(`Failed to upload file: ${error.message}`);
-  }
-
-  // Get public URL
-  const {
-    data: { publicUrl },
-  } = supabase.storage.from(bucketName).getPublicUrl(filePath);
-
-  if (!publicUrl) {
-    throw new Error("Failed to get public URL for uploaded file");
-  }
-
-  return publicUrl;
-}
+// Files are now uploaded directly from the client to Supabase Storage
+// This bypasses Vercel's 4.5MB request body limit
+// The API route only receives URLs, not file data
 
 export async function POST(request: NextRequest) {
   try {
@@ -87,8 +50,8 @@ export async function POST(request: NextRequest) {
     const status = formData.get("status") as string;
     const version = formData.get("version") as string || "1.0.0";
     const demoUrl = formData.get("demoUrl") as string;
-    const imageFile = formData.get("image") as File;
-    const zipFile = formData.get("zipFile") as File;
+    const imageUrl = formData.get("imageUrl") as string;
+    const zipUrl = formData.get("zipUrl") as string;
     const techStackJson = formData.get("techStack") as string;
     const licenseType = formData.get("licenseType") as string;
     const licenseSummary = formData.get("licenseSummary") as string;
@@ -97,7 +60,7 @@ export async function POST(request: NextRequest) {
     const keywords = formData.get("keywords") as string;
 
     // Validate required fields
-    if (!title || !shortDescription || !description || !price || !imageFile || !zipFile) {
+    if (!title || !shortDescription || !description || !price || !imageUrl || !zipUrl) {
       return NextResponse.json(
         { error: "Please fill in all required fields" },
         { status: 400 }
@@ -139,9 +102,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Upload files to Supabase Storage
-    const imageUrl = await uploadFileToStorage(supabase, imageFile, slug, "previews");
-    const zipUrl = await uploadFileToStorage(supabase, zipFile, slug, "downloads");
+    // Files are already uploaded to Supabase Storage by the client
+    // We just use the URLs that were passed in
 
     // Parse tech stack
     let techStack: string[] = [];
