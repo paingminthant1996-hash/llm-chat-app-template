@@ -47,29 +47,85 @@ export default function AdminUploadPage() {
     const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
     const [uploadProgress, setUploadProgress] = useState<string>("");
 
-    // Upload file via API route (uses service role key - bypasses RLS policies)
+    // Upload file directly to Supabase Storage (bypasses Vercel's 4.5MB limit)
+    // IMPORTANT: This uploads directly from client to Supabase, completely bypassing Vercel
+    // Requires storage policies to be configured (see supabase/STORAGE_POLICIES.sql)
     const uploadFileToStorage = async (file: File, folder: "previews" | "downloads", templateSlug: string): Promise<string> => {
-        const formData = new FormData();
-        formData.append("file", file);
-        formData.append("folder", folder);
-        formData.append("templateSlug", templateSlug);
+        const fileSizeMB = file.size / (1024 * 1024);
+        console.log(`[Direct Upload] Starting upload: ${file.name} (${fileSizeMB.toFixed(2)}MB) to ${folder}/`);
 
-        const response = await fetch("/api/upload-file", {
-            method: "POST",
-            body: formData,
-        });
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+        const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({ error: "Upload failed" }));
-            throw new Error(errorData.error || `Upload failed: ${response.status}`);
+        if (!supabaseUrl || !supabaseAnonKey) {
+            throw new Error("Supabase environment variables are not configured. Please check NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY");
         }
 
-        const result = await response.json();
-        if (!result.url) {
-            throw new Error("Failed to get upload URL");
+        const { createClient } = await import("@supabase/supabase-js");
+        const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+        // Get current user session (required for authenticated uploads)
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        
+        if (sessionError) {
+            console.error("[Direct Upload] Session error:", sessionError);
+            throw new Error(`Authentication error: ${sessionError.message}`);
         }
 
-        return result.url;
+        if (!session) {
+            throw new Error("You must be logged in to upload files. Please refresh the page and log in again.");
+        }
+
+        console.log(`[Direct Upload] User authenticated: ${session.user.email}`);
+
+        const bucketName = "template-assets";
+        const fileExt = file.name.split(".").pop();
+        const uniqueFileName = `${templateSlug}-${Date.now()}.${fileExt}`;
+        const filePath = `${folder}/${uniqueFileName}`;
+
+        console.log(`[Direct Upload] Uploading to: ${bucketName}/${filePath}`);
+
+        // Upload directly to Supabase Storage (bypasses Vercel completely)
+        // This goes directly from browser to Supabase, not through Vercel API routes
+        const { data, error } = await supabase.storage
+            .from(bucketName)
+            .upload(filePath, file, {
+                contentType: file.type,
+                upsert: false,
+            });
+
+        if (error) {
+            console.error("[Direct Upload] Storage upload error:", error);
+            
+            // Provide helpful error messages
+            if (error.message.includes("row-level security") || error.message.includes("RLS")) {
+                throw new Error(
+                    "Storage policy error: Please run the storage policies SQL file (supabase/STORAGE_POLICIES.sql) in Supabase Dashboard → SQL Editor"
+                );
+            }
+            
+            if (error.message.includes("Bucket not found")) {
+                throw new Error(
+                    `Bucket '${bucketName}' not found. Please create it in Supabase Dashboard → Storage with public access enabled.`
+                );
+            }
+            
+            throw new Error(`Upload failed: ${error.message}`);
+        }
+
+        console.log(`[Direct Upload] Upload successful:`, data);
+
+        // Get public URL
+        const {
+            data: { publicUrl },
+        } = supabase.storage.from(bucketName).getPublicUrl(filePath);
+
+        if (!publicUrl) {
+            throw new Error("Failed to get public URL for uploaded file");
+        }
+
+        console.log(`[Direct Upload] Public URL: ${publicUrl}`);
+        return publicUrl;
     };
 
     const frameworkOptions = ["Next.js", "React", "Vue", "Svelte", "Angular"];

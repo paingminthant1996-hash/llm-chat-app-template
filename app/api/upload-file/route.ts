@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-// Configure for large file uploads
+// Upload files using service role key (bypasses RLS)
+// Note: Vercel has 4.5MB limit, but we handle it server-side
 export const maxDuration = 180; // 3 minutes
 export const runtime = "nodejs";
 
@@ -26,7 +27,7 @@ export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
     const file = formData.get("file") as File;
-    const folder = formData.get("folder") as string; // "previews" or "downloads"
+    const folder = formData.get("folder") as string;
     const templateSlug = formData.get("templateSlug") as string;
 
     if (!file || !folder || !templateSlug) {
@@ -36,11 +37,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Check file size (Vercel limit is 4.5MB)
+    const fileSizeMB = file.size / (1024 * 1024);
+    if (fileSizeMB > 4.5) {
+      return NextResponse.json(
+        { error: `File size (${fileSizeMB.toFixed(2)}MB) exceeds Vercel's 4.5MB limit. Please reduce file size or use a different upload method.` },
+        { status: 413 }
+      );
+    }
+
     const supabase = getSupabaseAdmin();
     const bucketName = "template-assets";
     const fileExt = file.name.split(".").pop();
-    const fileName = `${templateSlug}-${Date.now()}.${fileExt}`;
-    const filePath = `${folder}/${fileName}`;
+    const uniqueFileName = `${templateSlug}-${Date.now()}.${fileExt}`;
+    const filePath = `${folder}/${uniqueFileName}`;
 
     // Convert File to ArrayBuffer
     const arrayBuffer = await file.arrayBuffer();
