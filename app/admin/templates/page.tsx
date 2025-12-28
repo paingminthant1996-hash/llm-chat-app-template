@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import Image from "next/image";
 import Link from "next/link";
+import { Trash2, Edit, Eye } from "lucide-react";
 import { Template } from "@/lib/types";
 import { getAllTemplates } from "@/lib/db/queries";
 import {
@@ -453,22 +454,28 @@ export default function AdminTemplatesPage() {
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => handleEdit(template)}
-                            className="px-3 py-1.5 bg-blue-500/20 text-blue-400 rounded-lg text-xs font-medium hover:bg-blue-500/30 transition-all"
+                            className="px-3 py-1.5 bg-blue-500/20 text-blue-400 rounded-lg text-xs font-medium hover:bg-blue-500/30 transition-all flex items-center gap-1.5"
+                            title="Edit template"
                           >
+                            <Edit className="w-3.5 h-3.5" />
                             Edit
                           </button>
                           <button
                             onClick={() => handleDelete(template.id)}
                             disabled={isDeleting === template.id}
-                            className="px-3 py-1.5 bg-red-500/20 text-red-400 rounded-lg text-xs font-medium hover:bg-red-500/30 transition-all disabled:opacity-50"
+                            className="px-3 py-1.5 bg-red-500/20 text-red-400 rounded-lg text-xs font-medium hover:bg-red-500/30 transition-all disabled:opacity-50 flex items-center gap-1.5"
+                            title="Delete template"
                           >
+                            <Trash2 className="w-3.5 h-3.5" />
                             {isDeleting === template.id ? "Deleting..." : "Delete"}
                           </button>
                           <Link
                             href={`/templates/${template.slug}`}
                             target="_blank"
-                            className="px-3 py-1.5 bg-gray-800 text-gray-300 rounded-lg text-xs font-medium hover:bg-gray-700 transition-all"
+                            className="px-3 py-1.5 bg-gray-800 text-gray-300 rounded-lg text-xs font-medium hover:bg-gray-700 transition-all flex items-center gap-1.5"
+                            title="View template"
                           >
+                            <Eye className="w-3.5 h-3.5" />
                             View
                           </Link>
                         </div>
